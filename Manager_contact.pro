@@ -16,3 +16,6 @@ HEADERS += \
 
 FORMS += \
     design/mainwindow.ui
+
+DISTFILES += \
+    .gitignore
