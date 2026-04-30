@@ -15,7 +15,9 @@ HEADERS += \
     sqlite/sqlite3.h
 
 FORMS += \
+    design/listeContact.ui \
     design/mainwindow.ui
 
 DISTFILES += \
-    .gitignore
+    .gitignore \
+    README.md
