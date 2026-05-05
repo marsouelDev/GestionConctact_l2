@@ -6,11 +6,13 @@ CONFIG += c++17
 INCLUDEPATH += include
 
 SOURCES += \
+    dataBases/database.cpp \
     src/main.cpp \
     src/mainwindow.cpp \
     sqlite/sqlite3.c
 
 HEADERS += \
+    dataBases/database.h \
     include/mainwindow.h \
     sqlite/sqlite3.h
 
