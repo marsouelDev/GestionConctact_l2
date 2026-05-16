@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/">
+        <file>design/AjouterContacts.qml</file>
+        <file>design/DetailsContacts.qml</file>
+        <file>design/FavorisContacts.qml</file>
+        <file>design/ListeContacts.qml</file>
+        <file>main.qml</file>
+    </qresource>
+</RCC>

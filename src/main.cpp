@@ -1,14 +1,14 @@
-#include <QApplication>
-#include <QtSql>
-#include <QDebug>
-#include"mainwindow.h"
-#include"dataBases/database.h"
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
 
 int main(int argc, char *argv[])
 {
- QApplication a(argc, argv);
-    Database::init();
-    MainWindow w;
-    w.show();
-    return a.exec();
+    QGuiApplication app(argc, argv);
+
+    QQmlApplicationEngine engine;
+
+    const QUrl url(QStringLiteral("qrc:/main.qml"));
+    engine.load(url);
+
+    return app.exec();
 }
