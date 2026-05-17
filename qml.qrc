@@ -1,9 +1,18 @@
 <RCC>
     <qresource prefix="/">
-        <file>design/AjouterContacts.qml</file>
-        <file>design/DetailsContacts.qml</file>
-        <file>design/FavorisContacts.qml</file>
-        <file>design/ListeContacts.qml</file>
+        <file>design/Components/Avatar.qml</file>
+        <file>design/Components/BottomNav.qml</file>
+        <file>design/Components/ContactCard.qml</file>
+        <file>design/Components/ContactRow.qml</file>
+        <file>design/Components/CustomAppBar.qml</file>
+        <file>design/Components/FabButton.qml</file>
+        <file>design/Components/InfoItem.qml</file>
+        <file>design/Components/SearchBar.qml</file>
+        <file>design/Components/TopBar.qml</file>
+        <file>design/page/AjouterContacts.qml</file>
+        <file>design/page/DetailsContacts.qml</file>
+        <file>design/page/FavorisContacts.qml</file>
+        <file>design/page/ListeContacts.qml</file>
         <file>main.qml</file>
     </qresource>
 </RCC>

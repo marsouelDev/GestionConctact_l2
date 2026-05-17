@@ -1,12 +1,13 @@
 #ifndef DATABASE_H
 #define DATABASE_H
+
 #include <QSqlDatabase>
 
-class Database{
+class Database
+{
 public:
-    static void init();
+    static bool init();
     static QSqlDatabase getDB();
-
 };
 
-#endif // DATABASE_H
+#endif
