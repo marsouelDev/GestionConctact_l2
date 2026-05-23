@@ -44,6 +44,7 @@ DISTFILES += \
     design/page/DetailsContacts.qml \
     design/page/FavorisContacts.qml \
     design/page/ListeContacts.qml \
+    design/page/ModifierContacts.qml \
     main.qml
 
 RESOURCES += \

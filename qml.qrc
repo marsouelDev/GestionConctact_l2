@@ -13,6 +13,7 @@
         <file>design/page/DetailsContacts.qml</file>
         <file>design/page/FavorisContacts.qml</file>
         <file>design/page/ListeContacts.qml</file>
+         <file>design/page/ModifierContacts.qml</file>
         <file>main.qml</file>
     </qresource>
 </RCC>
