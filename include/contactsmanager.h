@@ -4,10 +4,6 @@
 #include <QObject>
 #include <QVariantList>
 #include <QVariantMap>
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlError>
-#include <QDebug>
 
 class ContactsManager : public QObject
 {
@@ -27,12 +23,8 @@ public:
                                 const QString &telephone);
 
     // ── Nouvelles méthodes ───────────────────────────────────
+    Q_INVOKABLE QVariantMap  getContactById(int id);
 
-    // Retourne tous les champs d'un contact (id, nom, prenom,
-    // email, localite, organisation, telephone, favori)
-    Q_INVOKABLE QVariantMap getContactById(int id);
-
-    // Modifie un contact existant
     Q_INVOKABLE bool updateContact(int id,
                                    const QString &nom,
                                    const QString &prenom,
@@ -41,20 +33,14 @@ public:
                                    const QString &organisation,
                                    const QString &telephone);
 
-    // Supprime un contact par son id
     Q_INVOKABLE bool deleteContact(int id);
 
-    // Active / désactive le favori d'un contact
     Q_INVOKABLE bool setFavori(int id, bool favori);
 
-    // Retourne uniquement les contacts dont favori = 1
     Q_INVOKABLE QVariantList getFavoris();
 
 signals:
-    // Émis après tout ajout / modification / suppression
     void contactsChanged();
-
-    // Émis après setFavori pour rafraîchir FavorisContacts.qml
     void favorisChanged();
 };
 

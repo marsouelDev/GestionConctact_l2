@@ -60,7 +60,7 @@ bool ContactsManager::addContact(const QString &nom,
     // 1. INSÉRER CONTACT
     query.prepare(R"(
         INSERT INTO Contact (Nom, Prenom, Email, Localite, Organisation, Favori)
-        VALUES (?, ?, ?, ?, ?, 1)
+        VALUES (?, ?, ?, ?, ?, 0)
     )");
     query.addBindValue(nom);
     query.addBindValue(prenom);
