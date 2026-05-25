@@ -34,3 +34,14 @@ Thumbs.db
 .idea/
 *.pro.user
 .qtcreator/
+build/
+.qtcreator/
+.qtc_clangd/
+*.pro.user
+*.pro.user.*
+*.o
+*.obj
+*.exe
+*.dll
+*.db
+Makefile*
