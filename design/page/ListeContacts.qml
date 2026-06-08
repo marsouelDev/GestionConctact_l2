@@ -13,27 +13,100 @@ Page {
     function chargerContacts() {
         contactsModel.clear()
         var liste = contactsManager.listContact()
+
         for (var i = 0; i < liste.length; i++) {
-            contactsModel.append(liste[i])
+            var c = liste[i]
+
+            var premierTel = ""
+            var nbTel = 0
+            if (c.telephones && c.telephones.length > 0) {
+                nbTel = c.telephones.length
+                var t0 = c.telephones[0]
+                premierTel = (typeof t0 === "string") ? t0 : (t0.numero || "")
+            } else {
+                premierTel = c.telephone || ""
+            }
+
+            contactsModel.append({
+                id: c.id,
+                nom: c.nom || "",
+                prenom: c.prenom || "",
+                email: c.email || "",
+                localite: c.localite || "",
+                organisation: c.organisation || "",
+                telephone: premierTel,
+                nbTelephones: nbTel,
+                favori: c.favori === true,
+                telephones: c.telephones
+            })
         }
     }
 
     function filtrerContacts(terme) {
         contactsModel.clear()
+        var recherche = terme.toLowerCase().trim()
         var liste = contactsManager.listContact()
+
         for (var i = 0; i < liste.length; i++) {
-            var full = ((liste[i].prenom || "") + " " + (liste[i].nom || "")).toLowerCase()
-            if (terme.trim() === "" || full.indexOf(terme.toLowerCase()) >= 0)
-                contactsModel.append(liste[i])
+            var c = liste[i]
+            var trouve = false
+
+            var texte = (
+                (c.nom || "") + " " + (c.prenom || "") + " " +
+                (c.email || "") + " " + (c.localite || "") + " " +
+                (c.organisation || "") + " " + (c.telephone || "")
+            ).toLowerCase()
+
+            if (recherche === "" || texte.indexOf(recherche) >= 0) {
+                trouve = true
+            }
+
+            if (!trouve && c.telephones) {
+                for (var j = 0; j < c.telephones.length; j++) {
+                    var telData = c.telephones[j]
+                    var numero = ""
+                    if (typeof telData === "string") {
+                        numero = telData
+                    } else if (telData && telData.numero) {
+                        numero = telData.numero.toString()
+                    }
+                    if (numero.toLowerCase().indexOf(recherche) >= 0) {
+                        trouve = true
+                        break
+                    }
+                }
+            }
+
+            if (trouve) {
+                var premierTel = ""
+                var nbTel = 0
+                if (c.telephones && c.telephones.length > 0) {
+                    nbTel = c.telephones.length
+                    var t0 = c.telephones[0]
+                    premierTel = (typeof t0 === "string") ? t0 : (t0.numero || "")
+                } else {
+                    premierTel = c.telephone || ""
+                }
+
+                contactsModel.append({
+                    id: c.id,
+                    nom: c.nom || "",
+                    prenom: c.prenom || "",
+                    email: c.email || "",
+                    localite: c.localite || "",
+                    organisation: c.organisation || "",
+                    telephone: premierTel,
+                    nbTelephones: nbTel,
+                    favori: c.favori === true,
+                    telephones: c.telephones
+                })
+            }
         }
     }
 
     Component.onCompleted: chargerContacts()
-
-    // Rafraîchit quand on revient sur cette page (pop depuis n'importe où)
     StackView.onActivating: chargerContacts()
 
-    // Rafraîchit sur signal C++ (addContact, updateContact, deleteContact, setFavori)
     Connections {
         target: contactsManager
         function onContactsChanged() { chargerContacts() }
@@ -44,7 +117,6 @@ Page {
         anchors.fill: parent
         spacing: 14
 
-        // ================= APP BAR =================
         CustomAppBar { title: "Contacts" }
 
         // ================= SEARCH =================
@@ -63,7 +135,7 @@ Page {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "🔍"; font.pixelSize: 16; color: "#9ca3af"
+                    text: ""; font.pixelSize: 16; color: "#9ca3af"
                 }
 
                 TextField {
@@ -100,11 +172,10 @@ Page {
                 border.color: "#e5e7eb"
                 border.width: 1
 
-                // Clic ligne → DetailsContacts
-                // Qt.resolvedUrl résout le chemin relatif depuis ce fichier QML
                 MouseArea {
                     anchors.fill: parent
                     onClicked: {
+                        // ✅ Utiliser root.nav
                         root.nav.push(
                             Qt.resolvedUrl("DetailsContacts.qml"),
                             { contactId: model.id }
@@ -117,7 +188,6 @@ Page {
                     anchors.margins: 14
                     spacing: 12
 
-                    // Avatar initiales
                     Rectangle {
                         width: 44; height: 44; radius: 22
                         color: "#005da7"
@@ -133,7 +203,6 @@ Page {
                             color: "white"; font.bold: true; font.pixelSize: 15
                         }
 
-                        // Badge favori sur l'avatar
                         Rectangle {
                             visible: model.favori === true
                             width: 16; height: 16; radius: 8
@@ -143,7 +212,6 @@ Page {
                         }
                     }
 
-                    // Nom + téléphone
                     Column {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 2
@@ -151,17 +219,27 @@ Page {
 
                         Text {
                             text: (model.prenom || "") + " " + (model.nom || "")
-                            font.pixelSize: 15; font.bold: true; color: "#1f2937"
-                            elide: Text.ElideRight; width: parent.width
+                            font.pixelSize: 15
+                            font.bold: true
+                            color: "#1f2937"
+                            elide: Text.ElideRight
+                            width: parent.width
                         }
+
                         Text {
-                            text: (model.telephone || model.email || "")
-                            color: "#6b7280"; font.pixelSize: 12
-                            elide: Text.ElideRight; width: parent.width
+                            text: {
+                                var t = model.telephone || ""
+                                var nb = model.nbTelephones || 0
+                                if (nb > 1) return t + " (+" + (nb - 1) + " autre" + (nb > 2 ? "s" : "") + ")"
+                                return t
+                            }
+                            color: "#6b7280"
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                            width: parent.width
                         }
                     }
 
-                    // Bouton ★/☆ toggle favori
                     Button {
                         anchors.verticalCenter: parent.verticalCenter
                         background: Rectangle { color: "transparent" }
@@ -172,7 +250,6 @@ Page {
                         }
                         onClicked: {
                             contactsManager.setFavori(model.id, !(model.favori === true))
-                            // onContactsChanged rechargera automatiquement
                         }
                     }
                 }
@@ -203,35 +280,51 @@ Page {
 
         MouseArea {
             anchors.fill: parent
-            // Qt.resolvedUrl("AjouterContacts.qml") résout depuis ce dossier
+            // ✅ Utiliser root.nav
             onClicked: root.nav.push(Qt.resolvedUrl("AjouterContacts.qml"))
         }
     }
 
     // ================= BOTTOM NAV =================
     Rectangle {
-        width: parent.width; height: 72
-        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-        color: "white"; border.color: "#e5e7eb"
+        width: parent.width
+        height: 72
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        color: "white"
+        border.color: "#e5e7eb"
 
-        Rectangle { width: parent.width; height: 1; color: "#00000010" }
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: "#00000010"
+        }
 
         Row {
             anchors.centerIn: parent
-            spacing: 90
+            spacing: 60
 
-            Button {
-                text: "Contacts"
-                background: Rectangle { radius: 14; color: "#dbeafe" }
-                contentItem: Text { text: parent.text; color: "#005da7"; font.bold: true }
+            Rectangle {
+                width: 120; height: 40; radius: 14; color: "#dbeafe"
+                Text { anchors.centerIn: parent; text: "Contacts"; color: "#005da7"; font.bold: true }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        // ✅ Utiliser root.nav
+                        while (root.nav.depth > 1) root.nav.pop()
+                    }
+                }
             }
 
-            Button {
-                text: "Favoris"
-                background: Rectangle { radius: 14; color: "transparent" }
-                contentItem: Text { text: parent.text; color: "#6b7280"; font.bold: true }
-                // ← Même convention Qt.resolvedUrl que tous les autres push
-                onClicked: root.nav.push(Qt.resolvedUrl("FavorisContacts.qml"))
+            Rectangle {
+                width: 120; height: 40; radius: 14; color: "#f3f4f4"
+                Text { anchors.centerIn: parent; text: "Favoris"; color: "#6b7280"; font.bold: true }
+                MouseArea {
+                    anchors.fill: parent
+                    // ✅ Utiliser root.nav
+                    onClicked: root.nav.push(Qt.resolvedUrl("FavorisContacts.qml"))
+                }
             }
         }
     }

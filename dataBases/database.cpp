@@ -5,12 +5,24 @@
 
 QSqlDatabase Database::getDB()
 {
-    return QSqlDatabase::database("manager_connection");
+    QSqlDatabase db = QSqlDatabase::database("manager_connection");
+    //  S'assurer que foreign_keys est actif sur cette connexion
+    if (db.isOpen()) {
+        QSqlQuery q(db);
+        q.exec("PRAGMA foreign_keys = ON");
+    }
+    return db;
 }
 
 bool Database::init()
 {
     if (QSqlDatabase::contains("manager_connection")) {
+        //  Réactiver les foreign keys même si la connexion existe déjà
+        QSqlDatabase db = QSqlDatabase::database("manager_connection");
+        if (db.isOpen()) {
+            QSqlQuery q(db);
+            q.exec("PRAGMA foreign_keys = ON");
+        }
         return true;
     }
 
@@ -23,8 +35,6 @@ bool Database::init()
     }
 
     QSqlQuery query(db);
-
-    //  Activer les clés étrangères SQLite
     query.exec("PRAGMA foreign_keys = ON");
 
     // ================= TABLE CONTACT =================
@@ -36,7 +46,8 @@ bool Database::init()
             Prenom TEXT,
             Email TEXT,
             Localite TEXT,
-            Organisation TEXT
+            Organisation TEXT,
+            Favori INTEGER DEFAULT 0
         )
     )")) {
         qDebug() << "Erreur CREATE Contact:" << query.lastError().text();
@@ -60,11 +71,17 @@ bool Database::init()
             ID_Type INTEGER,
             ID_Contact INTEGER,
             FOREIGN KEY(ID_Type) REFERENCES TypeTelephone(ID_Type),
-            FOREIGN KEY(ID_Contact) REFERENCES Contact(ID_Contact)
+            FOREIGN KEY(ID_Contact) REFERENCES Contact(ID_Contact) ON DELETE CASCADE
         )
     )")) {
         qDebug() << "Erreur CREATE Telephone:" << query.lastError().text();
     }
+
+    // ================= TYPES PAR DÉFAUT =================
+    query.exec("INSERT OR IGNORE INTO TypeTelephone (ID_Type, libelle) VALUES (1, 'Mobile')");
+    query.exec("INSERT OR IGNORE INTO TypeTelephone (ID_Type, libelle) VALUES (2, 'WhatsApp')");
+    query.exec("INSERT OR IGNORE INTO TypeTelephone (ID_Type, libelle) VALUES (3, 'Maison')");
+    query.exec("INSERT OR IGNORE INTO TypeTelephone (ID_Type, libelle) VALUES (4, 'Bureau')");
 
     qDebug() << "Database initialisée avec succès";
     return true;

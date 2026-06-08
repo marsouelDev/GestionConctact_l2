@@ -12,31 +12,27 @@ class ContactsManager : public QObject
 public:
     explicit ContactsManager(QObject *parent = nullptr);
 
-    // ── Méthodes existantes ──────────────────────────────────
     Q_INVOKABLE QVariantList listContact();
+    Q_INVOKABLE QVariantMap  getContactById(int id);
 
     Q_INVOKABLE bool addContact(const QString &nom,
                                 const QString &prenom,
                                 const QString &email,
                                 const QString &localite,
                                 const QString &organisation,
-                                const QString &telephone);
+                                const QVariantList &telephones);
 
-    // ── Nouvelles méthodes ───────────────────────────────────
-    Q_INVOKABLE QVariantMap  getContactById(int id);
-
+    //  SIGNATURE MODIFIÉE : accepte maintenant une liste de téléphones
     Q_INVOKABLE bool updateContact(int id,
                                    const QString &nom,
                                    const QString &prenom,
                                    const QString &email,
                                    const QString &localite,
                                    const QString &organisation,
-                                   const QString &telephone);
+                                   const QVariantList &telephones);
 
     Q_INVOKABLE bool deleteContact(int id);
-
     Q_INVOKABLE bool setFavori(int id, bool favori);
-
     Q_INVOKABLE QVariantList getFavoris();
 
 signals:

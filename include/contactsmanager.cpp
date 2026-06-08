@@ -8,59 +8,116 @@ ContactsManager::ContactsManager(QObject *parent)
     : QObject(parent)
 {
     // Migration : ajoute la colonne Favori si elle n'existe pas encore
-    // SQLite ignore silencieusement si elle existe déjà — aucun risque.
     QSqlQuery q(Database::getDB());
     q.exec("ALTER TABLE Contact ADD COLUMN Favori INTEGER DEFAULT 0");
+
+    // S'assurer que les foreign keys sont activées à chaque démarrage
+    q.exec("PRAGMA foreign_keys = ON");
 }
 
-// ===================== LISTE CONTACTS =====================
+// ═══════════════════════════════════════════════════════════════
+//  FONCTION UTILITAIRE : récupérer tous les téléphones d'un contact
+// ═══════════════════════════════════════════════════════════════
+static QVariantList getTelephonesForContact(int idContact)
+{
+    QVariantList telephones;
+    QSqlQuery q(Database::getDB());
+    q.prepare(
+        "SELECT t.Numero, t.ID_Type, tt.libelle "
+        "FROM Telephone t "
+        "LEFT JOIN TypeTelephone tt ON t.ID_Type = tt.ID_Type "
+        "WHERE t.ID_Contact = ? "
+        "ORDER BY t.ID_Tel ASC"
+        );
+    q.addBindValue(idContact);
+
+    if (q.exec()) {
+        while (q.next()) {
+            QVariantMap tel;
+            tel["numero"]  = q.value("Numero").toString();
+            tel["type"]    = q.value("ID_Type").toInt();
+            tel["libelle"] = q.value("libelle").toString();
+            telephones.append(tel);
+        }
+    } else {
+        qDebug() << "Erreur getTelephonesForContact:" << q.lastError().text();
+    }
+    return telephones;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LISTE DE TOUS LES CONTACTS
+// ═══════════════════════════════════════════════════════════════
 QVariantList ContactsManager::listContact()
 {
     QVariantList list;
     QSqlQuery query(Database::getDB());
 
-    // On joint Telephone pour récupérer le numéro en même temps
     if (!query.exec(
-            "SELECT c.ID_Contact, c.Nom, c.Prenom, c.Email, "
-            "       c.Localite, c.Organisation, c.Favori, "
-            "       t.Numero AS telephone "
-            "FROM Contact c "
-            "LEFT JOIN Telephone t ON t.ID_Contact = c.ID_Contact "
-            "ORDER BY c.Nom, c.Prenom"))
+            "SELECT ID_Contact, Nom, Prenom, Email, "
+            "       Localite, Organisation, Favori "
+            "FROM Contact "
+            "ORDER BY ID_Contact DESC"
+            ))
     {
-        qDebug() << "Erreur SELECT:" << query.lastError().text();
+        qDebug() << "Erreur SELECT listContact:" << query.lastError().text();
         return list;
     }
 
     while (query.next()) {
         QVariantMap c;
-        c["id"]           = query.value("ID_Contact");
-        c["nom"]          = query.value("Nom");
-        c["prenom"]       = query.value("Prenom");
-        c["email"]        = query.value("Email");
-        c["localite"]     = query.value("Localite");
-        c["organisation"] = query.value("Organisation");
-        c["telephone"]    = query.value("telephone");
+        int id = query.value("ID_Contact").toInt();
+
+        c["id"]           = id;
+        c["nom"]          = query.value("Nom").toString();
+        c["prenom"]       = query.value("Prenom").toString();
+        c["email"]        = query.value("Email").toString();
+        c["localite"]     = query.value("Localite").toString();
+        c["organisation"] = query.value("Organisation").toString();
         c["favori"]       = query.value("Favori").toBool();
+
+        // Récupérer TOUS les téléphones de CE contact
+        QVariantList telephones = getTelephonesForContact(id);
+        c["telephones"] = telephones;
+
+        // Premier téléphone pour compatibilité (affichage rapide)
+        if (!telephones.isEmpty()) {
+            QVariantMap first = telephones.first().toMap();
+            c["telephone"] = first.value("numero").toString();
+        } else {
+            c["telephone"] = "";
+        }
+
         list.append(c);
     }
     return list;
 }
 
-// ===================== AJOUT CONTACT =====================
+// ═══════════════════════════════════════════════════════════════
+//  AJOUTER UN CONTACT (avec plusieurs téléphones)
+// ═══════════════════════════════════════════════════════════════
 bool ContactsManager::addContact(const QString &nom,
                                  const QString &prenom,
                                  const QString &email,
                                  const QString &localite,
                                  const QString &organisation,
-                                 const QString &telephone)
+                                 const QVariantList &telephones)
 {
-    QSqlQuery query(Database::getDB());
+    QSqlDatabase db = Database::getDB();
 
-    // 1. INSÉRER CONTACT
+    if (!db.isOpen()) {
+        qDebug() << "Database fermée";
+        return false;
+    }
+
+    db.transaction();
+
+    // ================= INSERT CONTACT =================
+    QSqlQuery query(db);
     query.prepare(R"(
-        INSERT INTO Contact (Nom, Prenom, Email, Localite, Organisation, Favori)
-        VALUES (?, ?, ?, ?, ?, 0)
+        INSERT INTO Contact
+        (Nom, Prenom, Email, Localite, Organisation)
+        VALUES (?, ?, ?, ?, ?)
     )");
     query.addBindValue(nom);
     query.addBindValue(prenom);
@@ -70,43 +127,58 @@ bool ContactsManager::addContact(const QString &nom,
 
     if (!query.exec()) {
         qDebug() << "Erreur INSERT Contact:" << query.lastError().text();
+        db.rollback();
         return false;
     }
 
-    // 2. RÉCUPÉRER L'ID DU CONTACT
     int idContact = query.lastInsertId().toInt();
 
-    // 3. INSÉRER TÉLÉPHONE
-    QSqlQuery telQuery(Database::getDB());
-    telQuery.prepare(R"(
-        INSERT INTO Telephone (Numero, ID_Type, ID_Contact)
-        VALUES (?, 1, ?)
-    )");
-    telQuery.addBindValue(telephone);
-    telQuery.addBindValue(idContact);
+    // ================= INSERT TOUS LES TELEPHONES =================
+    for (const QVariant &item : telephones) {
+        QVariantMap tel = item.toMap();
 
-    if (!telQuery.exec()) {
-        qDebug() << "Erreur INSERT Telephone:" << telQuery.lastError().text();
-        return false;
+        QString numero = tel["numero"].toString();
+        int typeId     = tel.value("type", 1).toInt();
+
+        if (numero.trimmed().isEmpty())
+            continue;
+
+        QSqlQuery telQuery(db);
+        telQuery.prepare(R"(
+            INSERT INTO Telephone (Numero, ID_Type, ID_Contact)
+            VALUES (?, ?, ?)
+        )");
+        telQuery.addBindValue(numero);
+        telQuery.addBindValue(typeId);
+        telQuery.addBindValue(idContact);
+
+        if (!telQuery.exec()) {
+            qDebug() << "Erreur INSERT Telephone:" << telQuery.lastError().text();
+            db.rollback();
+            return false;
+        }
     }
 
+    db.commit();
     emit contactsChanged();
+    qDebug() << "Contact ajouté avec succès, id=" << idContact
+             << ", nb téléphones=" << telephones.size();
     return true;
 }
 
-// ===================== OBTENIR UN CONTACT PAR ID =====================
+// ═══════════════════════════════════════════════════════════════
+//  OBTENIR UN CONTACT PAR ID (avec tous ses téléphones)
+// ═══════════════════════════════════════════════════════════════
 QVariantMap ContactsManager::getContactById(int id)
 {
     QVariantMap c;
     QSqlQuery query(Database::getDB());
 
     query.prepare(
-        "SELECT c.ID_Contact, c.Nom, c.Prenom, c.Email, "
-        "       c.Localite, c.Organisation, c.Favori, "
-        "       t.Numero AS telephone "
-        "FROM Contact c "
-        "LEFT JOIN Telephone t ON t.ID_Contact = c.ID_Contact "
-        "WHERE c.ID_Contact = ?"
+        "SELECT ID_Contact, Nom, Prenom, Email, "
+        "       Localite, Organisation, Favori "
+        "FROM Contact "
+        "WHERE ID_Contact = ?"
         );
     query.addBindValue(id);
 
@@ -116,14 +188,24 @@ QVariantMap ContactsManager::getContactById(int id)
     }
 
     if (query.next()) {
-        c["id"]           = query.value("ID_Contact");
-        c["nom"]          = query.value("Nom");
-        c["prenom"]       = query.value("Prenom");
-        c["email"]        = query.value("Email");
-        c["localite"]     = query.value("Localite");
-        c["organisation"] = query.value("Organisation");
-        c["telephone"]    = query.value("telephone");
+        c["id"]           = query.value("ID_Contact").toInt();
+        c["nom"]          = query.value("Nom").toString();
+        c["prenom"]       = query.value("Prenom").toString();
+        c["email"]        = query.value("Email").toString();
+        c["localite"]     = query.value("Localite").toString();
+        c["organisation"] = query.value("Organisation").toString();
         c["favori"]       = query.value("Favori").toBool();
+
+        // Récupérer TOUS les téléphones
+        QVariantList telephones = getTelephonesForContact(id);
+        c["telephones"] = telephones;
+
+        if (!telephones.isEmpty()) {
+            QVariantMap first = telephones.first().toMap();
+            c["telephone"] = first.value("numero").toString();
+        } else {
+            c["telephone"] = "";
+        }
     } else {
         qDebug() << "getContactById: aucun contact avec id=" << id;
     }
@@ -131,18 +213,22 @@ QVariantMap ContactsManager::getContactById(int id)
     return c;
 }
 
-// ===================== MODIFIER UN CONTACT =====================
+// ═══════════════════════════════════════════════════════════════
+//  MODIFIER UN CONTACT (avec gestion de plusieurs téléphones)
+// ═══════════════════════════════════════════════════════════════
 bool ContactsManager::updateContact(int id,
                                     const QString &nom,
                                     const QString &prenom,
                                     const QString &email,
                                     const QString &localite,
                                     const QString &organisation,
-                                    const QString &telephone)
+                                    const QVariantList &telephones)
 {
-    QSqlQuery query(Database::getDB());
+    QSqlDatabase db = Database::getDB();
+    db.transaction();
 
-    // 1. METTRE À JOUR LA TABLE Contact
+    // 1. METTRE À JOUR LE CONTACT
+    QSqlQuery query(db);
     query.prepare(R"(
         UPDATE Contact
         SET Nom=?, Prenom=?, Email=?, Localite=?, Organisation=?
@@ -157,72 +243,109 @@ bool ContactsManager::updateContact(int id,
 
     if (!query.exec()) {
         qDebug() << "Erreur UPDATE Contact:" << query.lastError().text();
+        db.rollback();
         return false;
     }
 
-    // 2. METTRE À JOUR LE TÉLÉPHONE
-    //    Si un enregistrement existe → UPDATE, sinon → INSERT
-    QSqlQuery checkTel(Database::getDB());
-    checkTel.prepare("SELECT COUNT(*) FROM Telephone WHERE ID_Contact = ?");
-    checkTel.addBindValue(id);
-    checkTel.exec();
-    checkTel.next();
-    int count = checkTel.value(0).toInt();
+    // 2. SUPPRIMER TOUS LES ANCIENS TÉLÉPHONES
+    QSqlQuery delTel(db);
+    delTel.prepare("DELETE FROM Telephone WHERE ID_Contact = ?");
+    delTel.addBindValue(id);
+    if (!delTel.exec()) {
+        qDebug() << "Erreur DELETE old telephones:" << delTel.lastError().text();
+        db.rollback();
+        return false;
+    }
 
-    QSqlQuery telQuery(Database::getDB());
-    if (count > 0) {
-        telQuery.prepare(R"(
-            UPDATE Telephone SET Numero=?
-            WHERE ID_Contact=?
-        )");
-        telQuery.addBindValue(telephone);
-        telQuery.addBindValue(id);
-    } else {
-        telQuery.prepare(R"(
+    // 3. RÉINSÉRER TOUS LES NOUVEAUX TÉLÉPHONES
+    for (const QVariant &item : telephones) {
+        QVariantMap tel = item.toMap();
+        QString numero = tel["numero"].toString();
+        int typeId     = tel.value("type", 1).toInt();
+
+        if (numero.trimmed().isEmpty())
+            continue;
+
+        QSqlQuery insTel(db);
+        insTel.prepare(R"(
             INSERT INTO Telephone (Numero, ID_Type, ID_Contact)
-            VALUES (?, 1, ?)
+            VALUES (?, ?, ?)
         )");
-        telQuery.addBindValue(telephone);
-        telQuery.addBindValue(id);
+        insTel.addBindValue(numero);
+        insTel.addBindValue(typeId);
+        insTel.addBindValue(id);
+
+        if (!insTel.exec()) {
+            qDebug() << "Erreur INSERT nouveau telephone:" << insTel.lastError().text();
+            db.rollback();
+            return false;
+        }
     }
 
-    if (!telQuery.exec()) {
-        qDebug() << "Erreur UPDATE/INSERT Telephone:" << telQuery.lastError().text();
-        return false;
-    }
-
+    db.commit();
     emit contactsChanged();
     return true;
 }
 
-// ===================== SUPPRIMER UN CONTACT =====================
+// ═══════════════════════════════════════════════════════════════
+//  ✅ SUPPRIMER UN CONTACT (CORRIGÉ : supprime d'abord les téléphones)
+// ═══════════════════════════════════════════════════════════════
 bool ContactsManager::deleteContact(int id)
 {
-    // 1. SUPPRIMER LE TÉLÉPHONE D'ABORD (contrainte de clé étrangère)
-    QSqlQuery telQuery(Database::getDB());
-    telQuery.prepare("DELETE FROM Telephone WHERE ID_Contact = ?");
-    telQuery.addBindValue(id);
+    QSqlDatabase db = Database::getDB();
 
-    if (!telQuery.exec()) {
-        qDebug() << "Erreur DELETE Telephone:" << telQuery.lastError().text();
+    // ✅ Démarrer une transaction pour garantir l'intégrité
+    if (!db.transaction()) {
+        qDebug() << "Erreur début transaction:" << db.lastError().text();
         return false;
     }
 
-    // 2. SUPPRIMER LE CONTACT
-    QSqlQuery query(Database::getDB());
-    query.prepare("DELETE FROM Contact WHERE ID_Contact = ?");
-    query.addBindValue(id);
+    // ✅ ÉTAPE 1 : Supprimer d'abord tous les téléphones liés au contact
+    QSqlQuery delTel(db);
+    delTel.prepare("DELETE FROM Telephone WHERE ID_Contact = ?");
+    delTel.addBindValue(id);
 
-    if (!query.exec()) {
-        qDebug() << "Erreur DELETE Contact:" << query.lastError().text();
+    if (!delTel.exec()) {
+        qDebug() << "Erreur DELETE telephones:" << delTel.lastError().text();
+        db.rollback();
         return false;
     }
 
+    int nbTelSupprimes = delTel.numRowsAffected();
+    qDebug() << "✅" << nbTelSupprimes << "téléphone(s) supprimé(s) pour le contact" << id;
+
+    // ✅ ÉTAPE 2 : Supprimer le contact
+    QSqlQuery delContact(db);
+    delContact.prepare("DELETE FROM Contact WHERE ID_Contact = ?");
+    delContact.addBindValue(id);
+
+    if (!delContact.exec()) {
+        qDebug() << "Erreur DELETE Contact:" << delContact.lastError().text();
+        db.rollback();
+        return false;
+    }
+
+    if (delContact.numRowsAffected() == 0) {
+        qDebug() << "❌ Contact non trouvé, id=" << id;
+        db.rollback();
+        return false;
+    }
+
+    // ✅ Valider la transaction
+    if (!db.commit()) {
+        qDebug() << "Erreur commit:" << db.lastError().text();
+        db.rollback();
+        return false;
+    }
+
+    qDebug() << "✅ Contact" << id << "supprimé avec succès";
     emit contactsChanged();
     return true;
 }
 
-// ===================== TOGGLE FAVORI =====================
+// ═══════════════════════════════════════════════════════════════
+//  TOGGLE FAVORI
+// ═══════════════════════════════════════════════════════════════
 bool ContactsManager::setFavori(int id, bool favori)
 {
     QSqlQuery query(Database::getDB());
@@ -240,20 +363,20 @@ bool ContactsManager::setFavori(int id, bool favori)
     return true;
 }
 
-// ===================== LISTE DES FAVORIS =====================
+// ═══════════════════════════════════════════════════════════════
+//  LISTE DES FAVORIS (avec tous les téléphones)
+// ═══════════════════════════════════════════════════════════════
 QVariantList ContactsManager::getFavoris()
 {
     QVariantList list;
     QSqlQuery query(Database::getDB());
 
     if (!query.exec(
-            "SELECT c.ID_Contact, c.Nom, c.Prenom, c.Email, "
-            "       c.Localite, c.Organisation, "
-            "       t.Numero AS telephone "
-            "FROM Contact c "
-            "LEFT JOIN Telephone t ON t.ID_Contact = c.ID_Contact "
-            "WHERE c.Favori = 1 "
-            "ORDER BY c.Nom, c.Prenom"))
+            "SELECT ID_Contact, Nom, Prenom, Email, "
+            "       Localite, Organisation "
+            "FROM Contact "
+            "WHERE Favori = 1 "
+            "ORDER BY Nom, Prenom"))
     {
         qDebug() << "Erreur getFavoris:" << query.lastError().text();
         return list;
@@ -261,14 +384,26 @@ QVariantList ContactsManager::getFavoris()
 
     while (query.next()) {
         QVariantMap c;
-        c["id"]           = query.value("ID_Contact");
-        c["nom"]          = query.value("Nom");
-        c["prenom"]       = query.value("Prenom");
-        c["email"]        = query.value("Email");
-        c["localite"]     = query.value("Localite");
-        c["organisation"] = query.value("Organisation");
-        c["telephone"]    = query.value("telephone");
+        int id = query.value("ID_Contact").toInt();
+
+        c["id"]           = id;
+        c["nom"]          = query.value("Nom").toString();
+        c["prenom"]       = query.value("Prenom").toString();
+        c["email"]        = query.value("Email").toString();
+        c["localite"]     = query.value("Localite").toString();
+        c["organisation"] = query.value("Organisation").toString();
         c["favori"]       = true;
+
+        QVariantList telephones = getTelephonesForContact(id);
+        c["telephones"] = telephones;
+
+        if (!telephones.isEmpty()) {
+            QVariantMap first = telephones.first().toMap();
+            c["telephone"] = first.value("numero").toString();
+        } else {
+            c["telephone"] = "";
+        }
+
         list.append(c);
     }
     return list;
